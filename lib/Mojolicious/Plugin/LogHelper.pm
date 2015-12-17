@@ -1,12 +1,29 @@
 package Mojolicious::Plugin::LogHelper;
 use Mojo::Base 'Mojolicious::Plugin';
 
-use Data::Dumper;
+use Data::Dumper ();
 
 our $VERSION = '0.01';
 
 sub register {
-  my ( $self, $app, $opts ) = @_;
+  my ( $self, $app, $dumper_opts ) = @_;
+
+  $dumper_opts ||= {};
+
+  die 'expected hash ref or nothing for LogHelper options'
+    unless ref $dumper_opts eq 'HASH';
+
+  $app->helper( debug => sub { _logit( 'debug', $dumper_opts, @_ ) } );
+  $app->helper( info  => sub { _logit( 'info',  $dumper_opts, @_ ) } );
+  $app->helper( warn  => sub { _logit( 'warn',  $dumper_opts, @_ ) } );
+  $app->helper( error => sub { _logit( 'error', $dumper_opts, @_ ) } );
+  $app->helper( fatal => sub { _logit( 'fatal', $dumper_opts, @_ ) } );
+
+}
+
+sub _dumper {
+
+  my ( $dumper_opts, $ref ) = @_;
 
   my @datadumper_settings = qw(
 
@@ -15,41 +32,34 @@ sub register {
 
   );
 
-  my $logit = sub {
+  my $d = Data::Dumper->new( [ $ref ] );
 
-    my ( $level, $c, @msgs ) = @_;
+  for my $key ( @datadumper_settings ) {
 
-    for my $msg ( @msgs ) {
+    next unless exists $dumper_opts->{ $key };
+    my $method = ucfirt $key;
+    $d->$method( $dumper_opts->{ $key } );
 
-      my $out = $msg;
+  }
 
-      if ( ref $msg ) {
+  return $d->Dump;
 
-        my $d = Data::Dumper->new( [ $msg ] );
-
-        for my $key ( @datadumper_settings ) {
-          next unless exists $opts->{ $key };
-          my $method = ucfirt $key;
-          $d->$method( $opts->{ $key } );
-        }
-
-        $out = $d->Dump;
-
-      }
-
-      $c->app->log->$level( $out );
-
-    }
-  };
-
-  $app->helper(
-    debug => $logit->( 'debug', @_ ),
-    info  => $logit->( 'info',  @_ ),
-    warn  => $logit->( 'warn',  @_ ),
-    error => $logit->( 'error', @_ ),
-    fatal => $logit->( 'fatal', @_ ),
-  );)
 }
+
+sub _logit {
+
+  my ( $level, $dumper_opts, $c, @msgs ) = @_;
+
+  my $location = (caller( 3 ))[3];
+
+  for my $msg ( @msgs ) {
+
+    my $out = ref $msg ? _dumper( $dumper_opts, $msg ) : $msg;
+    $c->app->log->$level( "[$location] $out" );
+
+  }
+}
+
 
 1;
 __END__
@@ -71,6 +81,20 @@ Mojolicious::Plugin::LogHelper - Mojolicious Plugin
 =head1 DESCRIPTION
 
 L<Mojolicious::Plugin::LogHelper> is a L<Mojolicious> plugin.
+
+=head1 HELPERS
+
+=head2 debug
+
+=head2 info
+
+=head2 warn
+
+=head2 error
+
+=head2 fatal
+
+These are helpers for the equivalent C<log> methods.
 
 =head1 METHODS
 
